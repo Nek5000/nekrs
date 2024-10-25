@@ -13,7 +13,7 @@ void ciSetup(MPI_Comm comm, setupAide &options)
     if(ciMode == 1) options.setArgs("RESTART FILE NAME", std::string("sst.fld+time=0"));
     if(ciMode == 2) options.setArgs("RESTART FILE NAME", std::string("ddes.fld+time=0"));
     if(ciMode == 3) options.setArgs("RESTART FILE NAME", std::string("iddes.fld+time=0"));
-    options.setArgs("SOLUTION OUTPUT INTERVAL", "0");
+    options.setArgs("SOLUTION OUTPUT INTERVAL", "-1");
     options.setArgs("VISCOSITY", std::to_string(1.0/10595.0));
     options.setArgs("DENSITY", std::string("1.0"));
     options.setArgs("END TIME", std::string("1"));
