@@ -1,25 +1,32 @@
 [GENERAL]
-polynomialOrder = 7
-#startFrom = r.fld
-
+polynomialOrder = 5
+#startFrom = "sst.fld"+time=0
 stopAt = endTime
-endTime = 200
-
-dt = targetCFL=2 + max=1e-2 + initial=1e-3
+endTime = 100
+dt = targetCFL=1.0+initial=1e-03
 timeStepper = tombo2
 
-checkpointControl = simulationTime
-checkpointInterval = 20 
-
-regularization = hpfrt + nModes=1 + scalingCoeff=10
+checkpointControl = simulationTime 
+checkpointInterval = 100
 
 constFlowRate = meanVelocity=1.0 + direction=X
 
+[PROBLEMTYPE]
+equation = navierStokes+variableViscosity
+
 [PRESSURE]
-residualTol = 1.0e-04
+residualTol = 1e-04
 
 [VELOCITY]
-boundaryTypeMap = zeroValue 
-viscosity = 1/6000.0
-rho = 1.0
-residualTol = 1.0e-06
+boundaryTypeMap = wall, wall
+residualTol = 1e-06
+density = 1.0
+viscosity = -10595. 
+
+[SCALAR00] # k
+boundaryTypeMap = inlet, inlet 
+residualTol = 1e-05
+
+[SCALAR01] # tau
+boundaryTypeMap = inlet, inlet
+residualTol = 1e-06

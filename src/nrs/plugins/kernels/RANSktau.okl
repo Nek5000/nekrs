@@ -1,9 +1,65 @@
+void SSTBlendingFunc(const dfloat rho, 
+                     const dfloat mueLam,
+                     const dfloat k,
+                     const dfloat tau,
+                     const dfloat stmag2,
+                     const dfloat xk,
+                     const dfloat yw,
+                     dfloat &f1,
+                     dfloat &mut)
+{
+  dfloat iyd = 0.0;
+  if(yw > p_tiny)
+    iyd = 1 / yw;
+  const dfloat iyd2 = iyd * iyd;
+
+  const dfloat k2 = sqrt(k);
+  const dfloat nu = mueLam / rho;
+  const dfloat crit = yw * k2 / (500.0 * nu * p_betainf_str);
+  dfloat arg1_1 = 500.0 * p_beta0_SST / 6.0;
+  dfloat f2 = 1.0;
+  if(crit > p_tiny){
+    const dfloat arg2_1 = k2 * tau * iyd / p_betainf_str;
+    const dfloat arg2_2 = 500.0 * nu * tau * iyd2;
+    arg1_1 = fmax(arg2_1, arg2_2);
+    const dfloat arg2 = fmax(2.0 * arg2_1, arg2_2);
+    const dfloat arg2sq = arg2 * arg2;
+    f2 = tanh(arg2sq);
+  }
+
+  f1 = 1.0;
+  if(yw > p_tiny){
+    const dfloat itau = 1 / (tau + p_tiny);
+    const dfloat den1_1 = 2.0 * p_sigom2 * xk * itau;
+    const dfloat den1_2 = p_tiny * tau * tau;
+    const dfloat den1 = fmax(den1_1, den1_2);
+    const dfloat arg1_2 = 4.0 * p_sigom2 * k * iyd2 / den1;
+    const dfloat arg1 = fmin(arg1_1, arg1_2);
+    const dfloat arg1_4 = arg1 * arg1 * arg1 * arg1;
+    f1 = tanh(arg1_4);
+  }
+
+  mut = rho * k * tau;
+  const dfloat stmagn = sqrt(2.0 * stmag2);
+  const dfloat argn = f2 * stmagn; 
+  const dfloat argtau = argn * tau;
+  if(p_alp1 < argtau){
+    mut = 0.0;
+    if(argn > 0.0)
+      mut = rho * p_alp1 * k / argn;
+  }
+}
+
 @kernel void mue(const dlong N,
                  const dlong offset,
                  const dfloat rho,
                  const dfloat mueLam,
+                 const dlong ifktau,
                  @ restrict const dfloat *K,
                  @ restrict const dfloat *TAU,
+                 @ restrict const dfloat *STMAG2,
+                 @ restrict const dfloat *XK,
+                 @ restrict const dfloat *YWD,
                  @ restrict dfloat *MUET,
                  @ restrict dfloat *MUE,
                  @ restrict dfloat *DIFF)
@@ -12,15 +68,192 @@
     if (n < N) {
       const dfloat k = K[n];
       const dfloat tau = TAU[n];
-      const dfloat mut = rho * p_alpinf_str * k * tau;
+
+      dfloat mut = 0.0;
+      dfloat sigk, sigom;
+      if(ifktau){
+        mut = rho * p_alpinf_str * k * tau;
+        sigk = p_sigma_k;
+        sigom = p_sigma_tau;
+      }
+      else{
+        const dfloat yw = YWD[n];
+        const dfloat stmag2 = STMAG2[n];
+        const dfloat xk = XK[n];
+	dfloat f1 = 1.0;
+        SSTBlendingFunc(rho, mueLam, k, tau, stmag2, xk, yw, f1, mut);
+        const dfloat f11 = 1.0 - f1;
+        sigk = f1 * p_sigmak_SST + f11 * p_sigk2;
+        sigom = f1 * p_sigma_tau + f11 * p_sigom2;
+      }
 
       MUET[n] = mut;
 
       MUE[n] = mueLam + mut;
-      DIFF[n + 0 * offset] = mueLam + p_sigma_k * mut;
-      DIFF[n + 1 * offset] = mueLam + p_sigma_tau * mut;
+      DIFF[n + 0 * offset] = mueLam + sigk * mut;
+      DIFF[n + 1 * offset] = mueLam + sigom * mut;
     }
 }
+
+@kernel void RANSktauComputeHex3D(const dlong N,
+                                  const dlong offset,
+                                  const dlong ifktau,
+                                  const dlong ifdes,
+                                  const dfloat rho,
+                                  const dfloat mue,
+                                  @ restrict const dfloat *K,
+                                  @ restrict const dfloat *TAU,
+                                  @ restrict const dfloat *STMAG2,
+                                  @ restrict const dfloat *OIOJSK,
+                                  @ restrict const dfloat *XK,
+                                  @ restrict const dfloat *XT,
+                                  @ restrict const dfloat *XTQ,
+                                  @ restrict const dfloat *DGRD,
+                                  @ restrict const dfloat *YWD,
+                                  @ restrict const dfloat *OMAG2,
+                                  @ restrict dfloat *SRCDIAG,
+                                  @ restrict dfloat *SRC)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    if(n < N){
+      const dfloat xk = XK[n];
+      const dfloat xt = XT[n];
+      const dfloat xtq = XTQ[n];
+
+      const dfloat stMag2 = STMAG2[n];
+      const dfloat OiOjSk = OIOJSK[n];
+
+      const dfloat kk = K[n];
+      const dfloat tau = TAU[n];
+
+      dfloat mu_t = 0.0;
+      dfloat Y_k = 0.0;
+      dfloat Rfact = 1.0;
+      dfloat Y_w, S_w0, G_wp, sigom, beta;
+      dfloat itau = 0;
+      if (tau > 0)
+        itau = 1 / (tau + p_tiny);
+
+      if(ifktau){
+        mu_t = rho * p_alpinf_str * kk * tau;
+        dfloat sigd = p_sigd_min;
+	dfloat f_beta_str = 1.0;
+        if (xk > 0) {
+          const dfloat xk3 = xk * xk * tau * tau;
+          sigd = p_sigd_max;
+          f_beta_str = (1.0 + p_fb_c1st * xk3) / (1.0 + p_fb_c2st * xk3);
+        }
+        const dfloat x_w = fabs(OiOjSk) * (tau * tau * tau * p_ibetainf_str3);
+        const dfloat f_b = (p_pope) ? (1.0 + p_fb_c1 * x_w) / (1.0 + p_fb_c2 * x_w) : 1.0;
+	
+        Y_k = rho * p_betainf_str * f_beta_str * itau;
+        Y_w = -rho * p_beta0 * f_b;
+        S_w0 = -rho * sigd *xk;
+        G_wp = rho * p_alp_inf * tau * 2*stMag2;
+        sigom = p_alpinf_str * p_sigma_tau;
+        beta = p_beta0;
+      }
+      else{
+        const dfloat yw = YWD[n];
+        dfloat f1 = 1.0;
+        SSTBlendingFunc(rho, mue, kk, tau, stMag2, xk, yw, f1, mu_t);
+	
+        const dfloat mu_min = p_edd_free * mue;
+        if(mu_t < mu_min && yw > p_ywlim) 
+          Rfact = mu_t / mu_min;
+
+        const dfloat f11 = 1.0 - f1;
+        beta = f1 * p_beta0_SST + f11 * p_beta2;
+        const dfloat gamma = f1 * p_alpinf_SST + f11 * p_gamma2;
+        sigom = f1 * p_sigma_tau + f11 * p_sigom2;
+	
+	Y_k = rho * p_betainf_str * itau;
+				
+        if(ifdes){
+          const dfloat cdes = f1 * p_cdes1 + f11 * p_cdes2;
+
+          const dfloat k2 = sqrt(kk);
+          const dfloat ransL = k2 * (tau + p_tiny) / p_betainf_str;
+
+          const dlong ide = n / p_Np;
+          const dfloat hmax = DGRD[ide];
+	  dfloat dscle = hmax;
+	  if(ifdes == 2){
+	    const dfloat dscl1 = 0.15 * fmax(yw, hmax);
+	    dscle = fmin(dscl1, hmax);
+	  }
+          const dfloat xlesL = cdes * dscle;
+
+          const dfloat omag2 = OMAG2[n];
+          const dfloat sqStOm = sqrt(stMag2 + omag2);
+          const dfloat ykap = p_vkappa * yw;
+          const dfloat ykap2 = ykap * ykap;
+          const dfloat denom_rd = ykap2 * sqStOm;
+	  const dfloat xnut = mu_t / rho;
+	  const dfloat xnul = mue / rho;
+          const dfloat xnueff = xnut + xnul;
+          dfloat rdt = 0.0;
+          if(denom_rd > p_tiny){
+	    rdt = xnueff / denom_rd;
+	    if(ifdes == 2) rdt = xnut / denom_rd;
+	  }
+          const dfloat cd12 = pow(p_cd1 * rdt, p_cd2);
+          const dfloat fdt = 1.0 - tanh(cd12);
+          dfloat ddesL = ransL - fdt * fmax(0.0, ransL - xlesL);
+	  
+	  if(ifdes == 2){
+	    dfloat rdl = 0.0;
+	    if(denom_rd > p_tiny) rdl = xnul / denom_rd;
+	    const dfloat alcon = 0.25 - yw / hmax;
+	    const dfloat alcon2 = alcon * alcon;
+	    const dfloat fb1 = -9.0 * alcon2;
+	    const dfloat fb = fmin(2.0 * exp(fb1), 1.0);
+	    const dfloat fd = fmax(1 - fdt, fb);
+	    dfloat fe1 = 2.0 * exp(fb1);
+	    if(alcon > 0.0) fe1 = 2.0 * exp(-11.09 * alcon2);
+	    const dfloat ft = tanh(pow(3.4969 * rdt, 3.0));
+	    const dfloat fl = tanh(pow(25.0 * rdl, 10.0));
+	    const dfloat fe2 = 1.0 - fmax(ft, fl);
+	    const dfloat fe = fe2 * fmax(fe1 - 1.0, 0.0);
+	    
+	    ddesL = fd * (1 + fe) * ransL + (1 - fd) * xlesL;
+	  }
+	  
+	  Y_k = 0.0;
+          if(ddesL > 0.0) Y_k = rho * k2 / ddesL;
+        }
+        Y_w = -rho * beta * Rfact;
+        S_w0 = -2.0 * rho * p_sigom2 * f11 * xk * Rfact;
+        G_wp = rho * gamma * tau * 2.0 * stMag2 * Rfact;
+      }
+
+      const dfloat kSrc = fmin(mu_t * 2*stMag2, 10.0f * Y_k * kk);
+      const dfloat kDiag = Y_k;
+
+      // compute source term for tau
+      const dfloat tau_max = 8.0 * beta / 3.0;
+      const dfloat S_tau = fmin(8.0f * mue * xtq * Rfact, tau_max);
+      const dfloat S_taup = 8.0 * rho * kk * xtq * sigom * Rfact;	  
+
+      dfloat tauSrc = 0.0;
+      dfloat tauDiag = 0.0;
+
+      if(tau < p_tiny){
+        tauSrc = -Y_w - S_tau;
+        tauDiag = G_wp - S_w0 + S_taup;
+      }
+      else{
+        tauSrc = -Y_w;
+        tauDiag = G_wp - S_w0 + S_taup + S_tau * itau;
+      }
+      SRC[n + 0 * offset] = kSrc;
+      SRC[n + 1 * offset] = tauSrc;
+      SRCDIAG[n + 0 * offset] = kDiag;
+      SRCDIAG[n + 1 * offset] = tauDiag;
+    }
+  }
+}
+
 @kernel void limit(const dlong N,
                    @restrict dfloat* K,
                    @restrict dfloat* TAU)
@@ -31,17 +264,18 @@
       dfloat tau = TAU[n];
       if(k < 0) k = 0.001 * fabs(k);
       if(tau < 0) tau = 0.001 * fabs(tau);
-
+      
       K[n] = k;
       TAU[n] = tau;
     }
 }
+
 @kernel void SijMag2OiOjSk(const dlong N,
-                        const dlong offset,
-                        const dlong ifOij,
-                        @ restrict const dfloat *SOIJ,
-                        @ restrict dfloat *OIOJSK,
-                        @ restrict dfloat *MAGSIJ)
+			   const dlong offset,
+			   const dlong ifOij,
+			   @ restrict const dfloat *SOIJ,
+			   @ restrict dfloat *OIOJSK,
+			   @ restrict dfloat *MAGSIJ)
 {
   for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner))
     if (n < N) {
@@ -64,20 +298,18 @@
                               2 * (o1 * o2 * s4 + o2 * o3 * s5 - o1 * o3 * s6);
         OIOJSK[n] = 8*OiOjSk;
       }
-   }
+    }
 }
-@kernel void RANSktauComputeHex3D(const dlong Nelements,
-                                  const dlong offset,
-                                  const dfloat rho,
-                                  const dfloat mue,
-                                  @ restrict const dfloat *vgeo,
-                                  @ restrict const dfloat *D,
-                                  @ restrict const dfloat *K,
-                                  @ restrict const dfloat *TAU,
-                                  @ restrict const dfloat *STMAG2,
-                                  @ restrict const dfloat *OIOJSK,
-                                  @ restrict dfloat *SRCDIAG,
-                                  @ restrict dfloat *SRC)
+
+@kernel void RANSGradHex3D(const dlong Nelements,
+			   const dlong offset,
+			   @ restrict const dfloat *vgeo,
+			   @ restrict const dfloat *D,
+			   @ restrict const dfloat *K,
+			   @ restrict const dfloat *TAU,
+			   @ restrict dfloat *XK,
+			   @ restrict dfloat *XT,
+			   @ restrict dfloat *XTQ)
 {
   for (dlong e = 0; e < Nelements; ++e; @outer(0)) {
     @shared dfloat s_k[p_Nq][p_Nq];
@@ -157,7 +389,6 @@
             dtauSqrtds += Ds * s_tauSqrt[n][i];
             dtauSqrtdt += Dt * s_tauSqrtloc[n];
           }
-
           const dfloat dkdx = drdx * dkdr + dsdx * dkds + dtdx * dkdt;
           const dfloat dkdy = drdy * dkdr + dsdy * dkds + dtdy * dkdt;
           const dfloat dkdz = drdz * dkdr + dsdz * dkds + dtdz * dkdt;
@@ -170,62 +401,11 @@
           const dfloat dtauSqrtdy = drdy * dtauSqrtdr + dsdy * dtauSqrtds + dtdy * dtauSqrtdt;
           const dfloat dtauSqrtdz = drdz * dtauSqrtdr + dsdz * dtauSqrtds + dtdz * dtauSqrtdt;
 
-          const dfloat xk = -(dkdx * dtaudx + dkdy * dtaudy + dkdz * dtaudz);
-          const dfloat xt = dtaudx * dtaudx + dtaudy * dtaudy + dtaudz * dtaudz;
-          const dfloat xtq = dtauSqrtdx * dtauSqrtdx + dtauSqrtdy * dtauSqrtdy + dtauSqrtdz * dtauSqrtdz;
-
           const dlong id = e * p_Np + k * p_Nq * p_Nq + j * p_Nq + i;
 
-          const dfloat stMag2 = STMAG2[id];
-          const dfloat OiOjSk = OIOJSK[id];
-
-          const dfloat kk = K[id];
-          const dfloat tau = TAU[id];
-
-          const dfloat mu_t = rho * p_alpinf_str * kk * tau;
-          dfloat itau = 0;
-          if (tau > 0)
-            itau = 1 / (tau + p_tiny);
-
-          dfloat sigd = p_sigd_min;
-          dfloat f_beta_str = 1.0;
-          if (xk > 0) {
-            const dfloat xk3 = xk * xk * tau * tau;
-            sigd = p_sigd_max;
-            f_beta_str = (1.0 + p_fb_c1st * xk3) / (1.0 + p_fb_c2st * xk3);
-          }
-	  
-          // compute source term for k
-          const dfloat Y_k = rho * p_betainf_str * f_beta_str * itau;
-          const dfloat kSrc = fmin(mu_t * 2*stMag2, 10.0f * Y_k * kk);
-          const dfloat kDiag = Y_k;
-
-          // compute source term for tau
-          const dfloat x_w = fabs(OiOjSk) * (tau * tau * tau * p_ibetainf_str3);
-          const dfloat f_b = (p_pope) ? (1.0 + p_fb_c1 * x_w) / (1.0 + p_fb_c2 * x_w) : 1.0;
-          const dfloat Y_w = -rho * p_beta0 * f_b;
-          const dfloat S_w0 = -rho * sigd *xk;
-          const dfloat G_wp = rho * p_alp_inf * tau * 2*stMag2;
-
-          const dfloat tau_max = 8.0 * p_beta0 / 3.0;
-          const dfloat S_tau = fmin(8.0f * mue * xtq, tau_max);
-          const dfloat S_taup = 8.0 * rho * p_alpinf_str * kk * xtq * p_sigma_tau;	  
-
-          dfloat tauSrc = 0.0;
-          dfloat tauDiag = 0.0;
-
-          if(tau < p_tiny){
-            tauSrc = -Y_w - S_tau;
-            tauDiag = G_wp - S_w0 + S_taup;
-          }
-          else{
-            tauSrc = -Y_w;
-            tauDiag = G_wp - S_w0 + S_taup + S_tau * itau;
-          }
-          SRC[id + 0 * offset] = kSrc;
-          SRC[id + 1 * offset] = tauSrc;
-          SRCDIAG[id + 0 * offset] = kDiag;
-          SRCDIAG[id + 1 * offset] = tauDiag;
+          XK[id] = -(dkdx * dtaudx + dkdy * dtaudy + dkdz * dtaudz);
+          XT[id] = dtaudx * dtaudx + dtaudy * dtaudy + dtaudz * dtaudz;
+          XTQ[id] = dtauSqrtdx * dtauSqrtdx + dtauSqrtdy * dtauSqrtdy + dtauSqrtdz * dtauSqrtdz;
         }
       }
       @barrier();

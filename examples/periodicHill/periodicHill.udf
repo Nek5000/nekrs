@@ -1,24 +1,95 @@
+#include "RANSktau.hpp"
+#include "tavg.hpp"
+
+static dfloat rho, mueLam;
+
+#include "ci.inc"
+
 #ifdef __okl__
+
+#include "ci.oudf"
+#include "periodicHill.oudf"
 
 #endif
 
-void UDF_Setup0(MPI_Comm comm, setupAide &options) 
+void userq(double time)
 {
+  RANSktau::updateSourceTerms();
+}
+
+void uservp(double time)
+{
+  auto mesh = nrs->meshV;
+  auto cds = nrs->cds;
+
+  RANSktau::updateProperties();
+}
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  options.getArgs("CI-MODE", ciMode);
+  if (ciMode) {
+    ciSetup(comm, options);
+  }
 }
 
 void UDF_Setup()
 {
-  auto mesh = nrs->mesh;
+  auto mesh = nrs->meshV;
+  auto cds = nrs->cds;
+
+  nrs->userProperties = &uservp;
+  nrs->userScalarSource = &userq;
+
+  const int kFieldIndex = 0;
+
+  std::string model = "sst";
+  if(ciMode == 2) model = "sst+ddes";
+  if(ciMode == 3) model = "sst+iddes";
+  RANSktau::setup(kFieldIndex, model);
+
+  //Initial Conditions
+  std::vector<dfloat> U(mesh->dim * nrs->fieldOffset, 0.0);
+  std::vector<dfloat> k(nrs->fieldOffset, 0.0);
+  std::vector<dfloat> tau(nrs->fieldOffset, 0.0);
 
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
-    std::vector<dfloat> U(mesh->dim * nrs->fieldOffset, 0.0);
     for(int n = 0; n < mesh->Nlocal; n++) {
       U[n + 0 * nrs->fieldOffset] = 1;
+      U[n + 1 * nrs->fieldOffset] = 0;
+      U[n + 2 * nrs->fieldOffset] = 0;
+      k[n] = 0.01; 
+      tau[n] = 0.1;
     }
     nrs->o_U.copyFrom(U.data(), U.size());
+    nrs->cds->o_S.copyFrom(k.data(), k.size(), cds->fieldOffsetScan[kFieldIndex]); 
+    nrs->cds->o_S.copyFrom(tau.data(), tau.size(), cds->fieldOffsetScan[kFieldIndex + 1]); 
+  }
+
+  if(ciMode) {
+    std::vector< std::vector<deviceMemory<dfloat>> > tavgFields;
+    
+    deviceMemory<dfloat> o_u(nrs->o_U.slice(0 * nrs->fieldOffset , nrs->fieldOffset));
+    deviceMemory<dfloat> o_v(nrs->o_U.slice(1 * nrs->fieldOffset , nrs->fieldOffset));
+    deviceMemory<dfloat> o_w(nrs->o_U.slice(2 * nrs->fieldOffset , nrs->fieldOffset));
+    deviceMemory<dfloat> o_k(cds->o_S.slice(0 * nrs->fieldOffset , nrs->fieldOffset));
+    deviceMemory<dfloat> o_tau(cds->o_S.slice(1 * nrs->fieldOffset , nrs->fieldOffset));
+    
+    tavgFields.push_back({o_u});
+    tavgFields.push_back({o_v});
+    tavgFields.push_back({o_w});
+    tavgFields.push_back({o_k});
+    tavgFields.push_back({o_tau});
+    
+    tavg::setup(nrs->fieldOffset, tavgFields);
   }
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
+  if(ciMode){
+    tavg::run(time);
+    auto o_avg = tavg::o_avg();
+    ciTestErrors(nrs, time, tstep, o_avg);
+  }
 }

@@ -80,10 +80,11 @@ void uservp(double time)
 
   dfloat conductivity;
   platform->options.getArgs("SCALAR00 DIFFUSIVITY", conductivity);
-  const dfloat Pr_t = 0.7;
+  const dfloat Pr_t = 0.85;
   auto o_mue_t = RANSktau::o_mue_t();
   auto o_temp_mue = cds->o_diff + 0 * cds->fieldOffset[0];
-  scalarScaledAdd(mesh->Nlocal, conductivity, 1 / Pr_t, o_mue_t, o_temp_mue);
+  platform->linAlg->fill(mesh->Nlocal, 1.0, o_temp_mue);
+  platform->linAlg->axpby(mesh->Nlocal, 1 / Pr_t, o_mue_t, conductivity, o_temp_mue);
 }
 
 void UDF_LoadKernels(deviceKernelProperties& kernelInfo)
@@ -125,8 +126,8 @@ void UDF_Setup()
       U[n + 1 * nrs->fieldOffset] = 0;
       U[n + 2 * nrs->fieldOffset] = 0;
       s0[n] = 1.0;
-      k[n + cds->fieldOffsetScan[1]] = 0.01; 
-      tau[n + cds->fieldOffsetScan[2]] = 0.1;
+      k[n] = 0.01; 
+      tau[n] = 0.1;
     }
     nrs->o_U.copyFrom(U.data(), U.size());
     nrs->cds->o_S.copyFrom(s0.data(), s0.size(), cds->fieldOffsetScan[0]); 

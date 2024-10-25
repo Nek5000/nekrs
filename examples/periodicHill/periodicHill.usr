@@ -1,90 +1,281 @@
 c-----------------------------------------------------------------------
-      subroutine usrdat()   ! This routine to modify element vertices
+      subroutine userchk()
       include 'SIZE'
       include 'TOTAL'
 
-      pi = atan(4.0)
-      n = nelt * 2**ndim
-
-      ymin = glmin(yc,n)
-      ymax = glmax(yc,n)
-      yscale = 1./(ymax-ymin)
-
-      do i=1,n
-         y = yscale*yc(i,1)
-         yc(i,1) = 0.5*(1.0 - cos(y*pi))
-      enddo
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat()   ! This routine to modify element vertices
+      include 'SIZE'
+      include 'TOTAL'
 
       return
       end
 c-----------------------------------------------------------------------
       subroutine usrdat2()  ! This routine to modify mesh coordinates
+      implicit none
       include 'SIZE'
-      include 'TOTAL'
+      include 'SOLN'            ! vx,vy,vz,pr,t
+      include 'GEOM'            ! boundaryID
+      include 'INPUT'           ! cbc
 
-      xmin = 0.
-      xmax = 9.0
+      integer iel, ifc
+c     mesh stretching
+      real Betax, Betay
+c     Hill parameters
+      real Lx, Ly, Lz, W, H
+      common /hill_param/ Lx, Ly, Lz, W, H, Betax, Betay
 
-      ymin = 0.
-      ymax = 3.035
+      Betax = 2.0
+      Betay = 2.4
+      Lx = 9.
+      Ly = 3.035
+      Lz = 4.5
+      W  = 1.929
+      H = 1.
 
-      zmin = 0.
-      zmax = 4.5
+c               Lx
+c      <----------------->
+c      ___________________
+c                           ^
+c                           |
+c                           |
+c      _                 _  | Ly
+c   ^   \               /   |
+c H |    \             /    |
+c   v     \___________/     v
+c      <-->
+c       W
 
-      call rescale_x(xm1,xmin,xmax)
-      call rescale_x(ym1,ymin,ymax)
-      call rescale_x(zm1,zmin,zmax)
+c     Transform box mesh to periodic hill (only for the conforming mesh!!)
+      call box2phill
 
-      hmax = 28.0
-
-      ntot = nx1*ny1*nz1*nelt
-      do i=1,ntot
-        x  = xm1(i,1,1,1)
-        y  = ym1(i,1,1,1)
-
-        yw = bottomph(hmax*x,hmax*xmin,hmax*xmax)/hmax
-        ym1(i,1,1,1) = (1. - yw/ymax)*y + yw 
+      do iel=1,nelt
+        if (cbc(1,iel,1) .eq. 'W  ') then 
+          boundaryID(1,iel) = 1
+        elseif (cbc(3,iel,1) .eq. 'W  ')then
+          boundaryID(3,iel) = 2
+        endif
       enddo
 
-      do e=1,nelt
-      do f=1,2*ndim
-        if (cbc(f,e,1) .eq. 'W  ') boundaryID(f,e) = 1
-      enddo
+      do iel=1,nelt
+        do ifc=1,2*ndim
+          cbc(ifc,iel,2) = cbc(ifc,iel,1)
+          cbc(ifc,iel,3) = cbc(ifc,iel,1)
+          cbc(ifc,iel,4) = cbc(ifc,iel,1)
+          if (cbc(ifc,iel,1) .eq. 'W  ') cbc(ifc,iel,2) = 't  '
+          if (cbc(ifc,iel,1) .eq. 'W  ') cbc(ifc,iel,3) = 't  '
+          if (cbc(ifc,iel,1) .eq. 'W  ') cbc(ifc,iel,4) = 't  '
+        enddo
       enddo
 
       return
       end
 c-----------------------------------------------------------------------
-      function bottomph(xin,xmin,xmax)
+      subroutine usrdat3()
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
 
-      xx  = xin
-      if (xin .gt. xmax/2) xx  = xin - xmax	! for reflection-like
-      x = abs(xx)
-   
-      if ( ( x >= xmin ).and.( x <= 9.0 ) ) then
-        y = min(28.0,  2.800000000000e+01 + 0.000000000000e+00*x +
-     &       6.775070969851E-03*x*x - 2.124527775800E-03*x*x*x)
-      else if( ( x > 9.0 ).and.( x <= 14.0 ) ) then
-        y =  2.507355893131e+01 + 9.754803562315e-01*x - 
-     &       1.016116352781e-01*x*x + 1.889794677828e-03*x*x*x
-      else if( ( x > 14.0 ).and.( x <= 20.0 ) ) then
-        y = 2.579601052357e+01 + 8.206693007457e-01*x -
-     &       9.055370274339e-02*x*x + 1.626510569859e-03*x*x*x
-      else if( ( x > 20.0 ).and.( x <= 30.0 ) ) then
-        y =  4.046435022819e+01 - 1.379581654948e+00*x 
-     &     + 1.945884504128e-02*x*x - 2.070318932190e-04*x*x*x
-      else if( ( x > 30.0 ).and.( x <= 40.0 ) ) then
-        y =  1.792461334664E+01 + 8.743920332081E-01*x
-     &     - 5.567361123058e-02*x*x + 6.277731764683e-04*x*x*x
-      else if( ( x > 40.0 ).and.( x <= 54.0 ) ) then
-        y = max( 0.0,  5.639011190988e+01 - 2.010520359035e+00*x
-     &           + 1.644919857549e-02*x*x + 2.674976141766e-05*x*x*x )
-      ELSE IF( ( x > 54.0 ).AND.( x <= xmax ) ) THEN
-        y = 0.0
-      endif
- 
-      bottomph = y
+      integer npt
+      parameter (npt=201)
+
+      common /pts/ xp(npt),yp(npt),zp(npt) 
+      real xp,yp,zp
+      
+      real xmin,xmax,ymin,deltax,glmin,glmax,hill_height
+      real yscale, yh
+      integer ntot,i
+
+      common /hill_param/ Lx, Ly, Lz, Wh, H, Betax, Betay
+      real Lx, Ly, Lz, Wh, H, Betax, Betay
+
+      !generate pts on lower wall for plotting
+      ntot = lx1*ly1*lz1*nelt
+      xmin = glmin(xm1,ntot)
+      xmax = glmax(xm1,ntot)
+      ymin = glmax(ym1,ntot)
+
+      deltax = (xmax-xmin)/(npt-1)
+      do i=1,npt
+        xp(i) = xmin + (i-1)*deltax
+        yh = hill_height(xp(i),Lx,Wh,H)
+        yp(i) = yh
+        zp(i) = 0.0
+      enddo
+      call nekrs_registerPtr('xp',xp)
+      call nekrs_registerPtr('yp',yp)
+      call nekrs_registerPtr('zp',zp)
 
       return
-      END
+      end
+c-----------------------------------------------------------------------
+      subroutine box2phill
+      implicit none
+      include 'SIZE'
+      include 'GEOM'            ! {x,y,z}m1
+      include 'INPUT'           ! param
+      include 'SOLN'
+
+      integer i, ntot
+      real Betax, Betay
+      real Lx, Ly, Lz, Wh, H    ! x dimension, y dimension, hill half width, hill height
+      common /hill_param/ Lx, Ly, Lz, Wh, H, Betax ,Betay
+      real shift, amp
+      real xscale, yscale, zscale, yh, xx, yy, zz
+      real hill_step,hill_height,xfac,glmax,glmin
+      real xmin, xmax, ymin, ymax, zmin, zmax
+      save xmin, xmax, ymin, ymax, zmin, zmax
+      logical ifminmax
+      save ifminmax
+      data ifminmax /.false./
+      
+      ntot = nx1*ny1*nz1*nelt
+
+      if (.not.ifminmax) then
+         ifminmax = .true.
+         xmin = glmin(xm1,ntot)
+         xmax = glmax(xm1,ntot)
+         ymin = glmin(ym1,ntot)
+         ymax = glmax(ym1,ntot)
+         if (if3d) then
+            zmin = glmin(zm1,ntot)
+            zmax = glmax(zm1,ntot)
+         endif
+      endif
+      
+C     decrease resolution in the high velocity regions (increase CFL)
+      do i=1,ntot
+         xm1(i,1,1,1) = 0.5*(sinh(Betax*(xm1(i,1,1,1)-0.5))/
+     $    sinh(Betax*0.5) + 1.0)
+      enddo
+
+c     increase resolution near the wall
+      do i=1,ntot
+         ym1(i,1,1,1) = 0.5*(tanh(Betay*(2*ym1(i,1,1,1)-1.0))/
+     $    tanh(Betay) + 1.0)
+      enddo
+      
+c     rescale rectangular domain [0,Lx]x[0,Ly]x[0,Lz]
+      xscale = Lx/(xmax-xmin)
+      yscale = Ly/(ymax-ymin)
+      do i=1,ntot
+         xx = xm1(i,1,1,1)
+         yy = ym1(i,1,1,1)
+         xm1(i,1,1,1) = (xx - xmin) * xscale
+         ym1(i,1,1,1) = (yy - ymin) * yscale
+      enddo
+      if (if3d) then
+         zscale = Lz/(zmax-zmin)
+         do i=1,ntot
+            zz = zm1(i,1,1,1)
+            zm1(i,1,1,1) = (zz - zmin) * zscale
+         enddo
+      endif
+
+c     Shift points in x
+      amp = 0.25
+      do i=1,ntot
+         xx = xm1(i,1,1,1)
+         yy = ym1(i,1,1,1)
+         xm1(i,1,1,1) = xx + amp*shift(xx,yy,Lx,Ly,Wh)
+      enddo
+      
+c     Add hill
+      do i=1,ntot
+         xx = xm1(i,1,1,1)
+         yy = ym1(i,1,1,1)
+         yh = hill_height(xx,Lx,Wh,H)
+         yscale = 1-yh/Ly
+         ym1(i,1,1,1) = yh + yy * yscale
+      enddo
+
+      return
+      end
+c-----------------------------------------------------------------------
+C     Step function for the hill
+C
+C          x=0
+C           | 
+C      _____|  
+C   ^       \
+C   |        \     x->
+C h |         \
+C   v          \_____
+C           <-->
+C            w     
+      function hill_step(x,w,h)
+      implicit none
+
+      real x,xs,w,h
+      real y,hill_step
+
+      xs = x/w
+
+      if (xs.le.0) then
+         y = h
+      elseif (xs.gt.0.and.xs.le.9./54.) then
+         y = h*min(1.,1.+7.05575248e-1*xs**2-1.1947737203e1*xs**3)
+      elseif (xs.gt.9./54.and.xs.le.14./54.) then
+         y = h*(0.895484248+1.881283544*xs-10.582126017*xs**2
+     $        +10.627665327*xs**3)
+      elseif (xs.gt.14./54.and.xs.le.20./54.) then
+         y = h*(0.92128609+1.582719366*xs-9.430521329*xs**2
+     $        +9.147030728*xs**3)
+      elseif (xs.gt.20./54..and.xs.le.30./54.) then
+         y = h*(1.445155365-2.660621763*xs+2.026499719*xs**2
+     $        -1.164288215*xs**3)
+      elseif (xs.gt.30./54..and.xs.le.40./54.) then
+         y = h*(0.640164762+1.6863274926*xs-5.798008941*xs**2
+     $        +3.530416981*xs**3)
+      elseif (xs.gt.40./54..and.xs.le.1.) then
+         y = h*(2.013932568-3.877432121*xs+1.713066537*xs**2
+     $        +0.150433015*xs**3)
+      else
+         y = 0.
+      endif
+
+      hill_step = y
+      
+      return
+      end
+c----------------------------------------------------------------------- 
+      function hill_height(x,Lx,w,H)
+      implicit none
+      real hill_height,hill_step,x,Lx,w,h
+      real xx
+
+      if (x.lt.0) then
+         xx = Lx + mod(x, Lx)
+      elseif (x.gt.Lx) then
+         xx = mod(x, Lx)
+      else
+         xx = x
+      endif
+
+      hill_height = hill_step(xx,w,h) + hill_step(Lx-xx,w,h)
+      
+      return
+      end          
+c-----------------------------------------------------------------------
+      function shift(x,y,Lx,Ly,W)
+      implicit none
+      real x,y,Lx,Ly,W
+      real xfac,yfac,shift
+
+      yfac = (1-y/Ly)**3
+
+      if (x.le.W/2) then
+         xfac = -2./W * x
+      elseif (x.gt.W/2.and.x.le.Lx-W/2) then
+         xfac = 2./(Lx-W) * x -1-W/(Lx-W)
+      elseif (x.gt.Lx-W/2) then
+         xfac = -2./W * x + 2*Lx/W
+      endif
+
+      shift = xfac*yfac
+
+      return
+      end
 c-----------------------------------------------------------------------

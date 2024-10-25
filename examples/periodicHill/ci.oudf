@@ -1,0 +1,59 @@
+@kernel void tauWallKernel(const dlong Nelements,
+			   const dlong offset,
+			   @ restrict const dfloat *sgeo,
+			   @ restrict const dlong *vmapM,
+			   @ restrict const int *EToB,
+			   @ restrict const dfloat *mue,
+			   @ restrict const dfloat *SIJ,
+			   @ restrict dfloat *tauw)
+{
+  for (dlong e = 0; e < Nelements; e++; @outer(0)) {
+    for (int f = 0; f < p_Nfaces; f++) {
+      const dlong bcType = EToB[f + p_Nfaces * e];
+      
+      if(bcType == p_bcTypeW) {
+	for (int m = 0; m < p_Nfp; ++m; @inner(0)) {
+	  const int n = m + f * p_Nfp;
+	  const int sk = e * p_Nfp * p_Nfaces + n;
+	  const dlong idM = vmapM[sk];
+	  const dlong sid = e * p_Nfaces * p_Nfp + n;
+	  
+	  const dfloat sWJ = sgeo[sid * p_Nsgeo + p_WSJID];
+	  
+	  const dfloat n1 = sgeo[sid * p_Nsgeo + p_NXID];
+	  const dfloat n2 = sgeo[sid * p_Nsgeo + p_NYID];
+	  const dfloat n3 = sgeo[sid * p_Nsgeo + p_NZID];
+	  
+	  const dfloat t1x = sgeo[sid * p_Nsgeo + p_T1XID];
+	  const dfloat t1y = sgeo[sid * p_Nsgeo + p_T1YID];
+	  const dfloat t1z = sgeo[sid * p_Nsgeo + p_T1ZID];
+	  
+	  const dfloat t2x = sgeo[sid * p_Nsgeo + p_T2XID];
+	  const dfloat t2y = sgeo[sid * p_Nsgeo + p_T2YID];
+	  const dfloat t2z = sgeo[sid * p_Nsgeo + p_T2ZID];
+	  
+	  const dfloat s11 = SIJ[idM + 0 * offset];
+	  const dfloat s21 = SIJ[idM + 1 * offset];
+	  const dfloat s31 = SIJ[idM + 2 * offset];
+	  
+	  const dfloat s12 = s21;
+	  const dfloat s22 = SIJ[idM + 3 * offset];
+	  const dfloat s32 = SIJ[idM + 4 * offset];
+	  
+	  const dfloat s13 = s31;
+	  const dfloat s23 = s32;
+	  const dfloat s33 = SIJ[idM + 5 * offset];
+	  
+	  const dfloat scale = -2 * mue[idM];
+	  
+	  const dfloat dragx = scale*(s11 * n1 + s12 * n2 + s13 * n3);
+	  const dfloat dragy = scale*(s21 * n1 + s22 * n2 + s23 * n3);
+	  const dfloat dragz = scale*(s31 * n1 + s32 * n2 + s33 * n3);
+	  
+	  tauw[idM] = dragx * t1x + dragy * t1y + dragz * t1z;
+	}
+	@barrier();
+      }
+    }
+  }
+}

@@ -1,0 +1,174 @@
+void rmax(dfloat *s_max, const dlong t, const dlong bs) {
+  s_max[t] = (s_max[t] > s_max[t + bs]) ? s_max[t] : s_max[t + bs];
+}
+
+void rmin(dfloat *s_min, const dlong t, const dlong bs) {
+  s_min[t] = (s_min[t] < s_min[t + bs]) ? s_min[t] : s_min[t + bs];
+}
+
+@kernel void desLenScale(const dlong Nelements,
+			 const dlong offset,
+			 @ restrict const dfloat *x,
+			 @ restrict const dfloat *y,
+			 @ restrict const dfloat *z,
+			 @ restrict dfloat *dgrd)
+{
+  for (dlong e = 0; e < Nelements; e++; @outer(0)) {
+    const dlong Nblocks = (p_Np + p_blockSize - 1)/p_blockSize;
+
+    const dfloat iporder = 1.0 / (p_Nq - 1.0); 
+
+    dgrd[e] = -1e10;
+
+    for (dlong n = 0; n < Nblocks; n++) {
+      @shared dfloat s_xmax[p_blockSize];
+      @shared dfloat s_xmin[p_blockSize];
+      @shared dfloat s_ymax[p_blockSize];
+      @shared dfloat s_ymin[p_blockSize];
+      @shared dfloat s_zmax[p_blockSize];
+      @shared dfloat s_zmin[p_blockSize];
+
+      for (dlong t = 0; t < p_blockSize; ++t; @inner(0)) {
+        s_xmax[t] = -1e10;
+        s_xmin[t] = 1e10;
+        s_ymax[t] = -1e10;
+        s_ymin[t] = 1e10;
+        s_zmax[t] = -1e10;
+        s_zmin[t] = 1e10;
+        const dlong ide = n * p_blockSize + t;
+        if(ide < p_Np){
+          const dlong id = e * p_Np + ide;
+          s_xmax[t] = x[id];
+          s_xmin[t] = x[id];
+          s_ymax[t] = y[id];
+          s_ymin[t] = y[id];
+          s_zmax[t] = z[id];
+          s_zmin[t] = z[id];
+        }
+      }
+      @barrier();
+
+#if p_blockSize > 512
+      for (int t = 0; t < p_blockSize; ++t; @inner(0))
+        if (t < 512) {
+          rmax(s_xmax, t, 512);
+          rmin(s_xmin, t, 512);
+          rmax(s_ymax, t, 512);
+          rmin(s_ymin, t, 512);
+          rmax(s_zmax, t, 512);
+          rmin(s_zmin, t, 512);
+        }
+      @barrier();
+#endif
+
+#if p_blockSize > 256
+      for (int t = 0; t < p_blockSize; ++t; @inner(0))
+        if (t < 256) {
+          rmax(s_xmax, t, 256);
+          rmin(s_xmin, t, 256);
+          rmax(s_ymax, t, 256);
+          rmin(s_ymin, t, 256);
+          rmax(s_zmax, t, 256);
+          rmin(s_zmin, t, 256);
+        }
+      @barrier();
+#endif
+
+      for (int t = 0; t < p_blockSize; ++t; @inner(0))
+        if (t < 128) {
+          rmax(s_xmax, t, 128);
+          rmin(s_xmin, t, 128);
+          rmax(s_ymax, t, 128);
+          rmin(s_ymin, t, 128);
+          rmax(s_zmax, t, 128);
+          rmin(s_zmin, t, 128);
+        }
+      @barrier();
+
+      for (int t = 0; t < p_blockSize; ++t; @inner(0))
+        if (t < 64) {
+          rmax(s_xmax, t, 64);
+          rmin(s_xmin, t, 64);
+          rmax(s_ymax, t, 64);
+          rmin(s_ymin, t, 64);
+          rmax(s_zmax, t, 64);
+          rmin(s_zmin, t, 64);
+        }
+      @barrier();
+
+      for (int t = 0; t < p_blockSize; ++t; @inner(0))
+        if (t < 32) {
+          rmax(s_xmax, t, 32);
+          rmin(s_xmin, t, 32);
+          rmax(s_ymax, t, 32);
+          rmin(s_ymin, t, 32);
+          rmax(s_zmax, t, 32);
+          rmin(s_zmin, t, 32);
+        }
+      @barrier();
+
+      for (int t = 0; t < p_blockSize; ++t; @inner(0))
+        if (t < 16) {
+          rmax(s_xmax, t, 16);
+          rmin(s_xmin, t, 16);
+          rmax(s_ymax, t, 16);
+          rmin(s_ymin, t, 16);
+          rmax(s_zmax, t, 16);
+          rmin(s_zmin, t, 16);
+        }
+      @barrier();
+
+      for (int t = 0; t < p_blockSize; ++t; @inner(0))
+        if (t < 8) {
+          rmax(s_xmax, t, 8);
+          rmin(s_xmin, t, 8);
+          rmax(s_ymax, t, 8);
+          rmin(s_ymin, t, 8);
+          rmax(s_zmax, t, 8);
+          rmin(s_zmin, t, 8);
+        }
+      @barrier();
+
+      for (int t = 0; t < p_blockSize; ++t; @inner(0))
+        if (t < 4) {
+          rmax(s_xmax, t, 4);
+          rmin(s_xmin, t, 4);
+          rmax(s_ymax, t, 4);
+          rmin(s_ymin, t, 4);
+          rmax(s_zmax, t, 4);
+          rmin(s_zmin, t, 4);
+        }
+      @barrier();
+
+      for (int t = 0; t < p_blockSize; ++t; @inner(0))
+        if (t < 2) {
+          rmax(s_xmax, t, 2);
+          rmin(s_xmin, t, 2);
+          rmax(s_ymax, t, 2);
+          rmin(s_ymin, t, 2);
+          rmax(s_zmax, t, 2);
+          rmin(s_zmin, t, 2);
+        }
+      @barrier();
+
+      for (int t = 0; t < p_blockSize; ++t; @inner(0))
+        if (t < 1) {
+          const dfloat xmax = (s_xmax[0] > s_xmax[1]) ? s_xmax[0] : s_xmax[1];
+          const dfloat xmin = (s_xmin[0] < s_xmin[1]) ? s_xmin[0] : s_xmin[1];
+          const dfloat ymax = (s_ymax[0] > s_ymax[1]) ? s_ymax[0] : s_ymax[1];
+          const dfloat ymin = (s_ymin[0] < s_ymin[1]) ? s_ymin[0] : s_ymin[1];
+          const dfloat zmax = (s_zmax[0] > s_zmax[1]) ? s_zmax[0] : s_zmax[1];
+          const dfloat zmin = (s_zmin[0] < s_zmin[1]) ? s_zmin[0] : s_zmin[1];
+
+          const dfloat dxgrd = (xmax - xmin) * iporder;
+          const dfloat dygrd = (ymax - ymin) * iporder;
+          const dfloat dzgrd = (zmax - zmin) * iporder;
+
+          const dfloat dd = fmax(dxgrd, dygrd);
+          const dfloat dd1 = fmax(dd, dzgrd);
+          dgrd[e] = fmax(dgrd[e], dd1);
+        }
+      @barrier();
+    }
+  }
+}

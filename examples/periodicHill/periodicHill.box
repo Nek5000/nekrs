@@ -12,7 +12,7 @@
 #=======================================================================
 #
 Box
--50  -10  -25                                     nelx,nely,nelz for Box
+-18  -12  -5                                     nelx,nely,nelz for Box
 0. 1. 1.                                          x0,x1,gain  (rescaled in usrdat)
 0. 1. 1.                                          z0,z1,gain
 0. 1. 1.                                          z0,z1,gain
