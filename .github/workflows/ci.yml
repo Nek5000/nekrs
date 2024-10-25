@@ -285,3 +285,30 @@ jobs:
     - name: 'ktauChannel'
       working-directory: ${{ env.NEKRS_EXAMPLES }}/build
       run: ctest -R ktauChannel 
+
+  periodicHill:
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v4
+      with:
+        clean: true
+
+    - name: APT dependencies
+      run: |
+        sudo apt -y update
+        sudo apt install -y mpich libmpich-dev
+
+    - name: Download install dir
+      uses: actions/download-artifact@v4
+      with:
+        name: install-dir
+        path: ${{ env.NEKRS_HOME }}
+
+    - name: Set install dir permissions
+      run: chmod -R 755 ${{ env.NEKRS_HOME }}
+
+    - name: 'periodicHill'
+      working-directory: ${{ env.NEKRS_EXAMPLES }}/build
+      run: ctest -R periodicHill 
