@@ -40,7 +40,7 @@ void SSTBlendingFunc(const dfloat rho,
   }
 
   mut = rho * k * tau;
-  const dfloat stmagn = sqrt(2.0 * stmag2);//note: stmag2 is missing factor 2
+  const dfloat stmagn = sqrt(2.0 * stmag2);
   const dfloat argn = f2 * stmagn; 
   const dfloat argtau = argn * tau;
   if(p_alp1 < argtau){
