@@ -83,7 +83,8 @@ void uservp(double time)
   const dfloat Pr_t = 0.85;
   auto o_mue_t = RANSktau::o_mue_t();
   auto o_temp_mue = cds->o_diff + 0 * cds->fieldOffset[0];
-  scalarScaledAdd(mesh->Nlocal, conductivity, 1 / Pr_t, o_mue_t, o_temp_mue);
+  platform->linAlg->fill(mesh->Nlocal, 1.0, o_temp_mue);
+  platform->linAlg->axpby(mesh->Nlocal, 1 / Pr_t, o_mue_t, conductivity, o_temp_mue);
 }
 
 void UDF_LoadKernels(deviceKernelProperties& kernelInfo)
