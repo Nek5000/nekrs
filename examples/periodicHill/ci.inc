@@ -77,24 +77,24 @@ void ciTestErrors(nrs_t *nrs, double time, int tstep, occa::memory o_avgU)
 
   interpolator->eval(1, nrs->fieldOffset, o_tauw, offset, o_tauwp);
 
-	if(platform->comm.mpiRank == 0){
-		//https://turbmodels.larc.nasa.gov/Other_LES_Data/2Dhill_periodic/hill_LES_cf_digitized.dat
-		std::ifstream file("les.dat");
-		std::string line;
-		std::vector<dfloat> lesData;
-		while(file >> line){
-			lesData.push_back(std::stod(line));
-		}
-		file.close();
-
-		static deviceMemory<dfloat> o_err (lesData.size());
-		o_err.copyFrom(lesData);
-		platform->linAlg->axpby(lesData.size(), 1.0, o_tauwp, -1.0, o_err);
-		dfloat errNorm = platform->linAlg->norm2(lesData.size(), o_err, MPI_COMM_SELF);
-
-		dfloat eps = EPS_SST;
-		if(ciMode == 2) eps = EPS_DDES;
-		if(ciMode == 3) eps = EPS_IDDES;
-		CiEvalTest("tau Wall norm Err: " + to_string_f(errNorm), errNorm < eps);
-	}
+  if(platform->comm.mpiRank == 0){
+    //https://turbmodels.larc.nasa.gov/Other_LES_Data/2Dhill_periodic/hill_LES_cf_digitized.dat
+    std::ifstream file("les.dat");
+    std::string line;
+    std::vector<dfloat> lesData;
+    while(file >> line){
+      lesData.push_back(std::stod(line));
+    }
+    file.close();
+		
+    static deviceMemory<dfloat> o_err (lesData.size());
+    o_err.copyFrom(lesData);
+    platform->linAlg->axpby(lesData.size(), 1.0, o_tauwp, -1.0, o_err);
+    dfloat errNorm = platform->linAlg->norm2(lesData.size(), o_err, MPI_COMM_SELF);
+    
+    dfloat eps = EPS_SST;
+    if(ciMode == 2) eps = EPS_DDES;
+    if(ciMode == 3) eps = EPS_IDDES;
+    CiEvalTest("tau Wall norm Err: " + to_string_f(errNorm), errNorm < eps);
+  }
 }
