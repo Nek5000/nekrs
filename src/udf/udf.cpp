@@ -581,24 +581,13 @@ void udfEcho()
   unifdef("__okl__", udfFile.c_str(), tmpFile.c_str());
 
   std::ifstream fudf(tmpFile);
-  std::string text;
-
-  std::cout << std::endl;
-  while (!fudf.eof()) {
-    getline(fudf, text);
+  for (std::string text; std::getline(fudf, text);)
     std::cout << "<<< " << text << "\n";
-  }
-  fudf.close();
+  std::cout << std::endl;
   fs::remove(tmpFile);
 
   std::ifstream foudf(oudfFileCache);
-
-  std::cout << std::endl;
-  while (!foudf.eof()) {
-    getline(foudf, text);
+  for (std::string text; std::getline(foudf, text);)
     std::cout << "<<< " << text << "\n";
-  }
   std::cout << std::endl;
-
-  foudf.close();
 }
