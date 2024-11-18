@@ -98,20 +98,11 @@ else()
     set(IS_APPLE_M3 FALSE)
 endif()
 
-# Example: print out the detected CPU architecture
-message(STATUS "CPU Brand: ${CPU_BRAND_STRING}")
-message(STATUS "Is Apple M3: ${IS_APPLE_M3}")
-message(STATUS "Is Apple M2: ${IS_APPLE_M2}")
-message(STATUS "Is Apple M1: ${IS_APPLE_M1}")
-
-
 if(USING_GNU OR USING_LLVM OR USING_APPLE_LLVM)
   if(IS_APPLE_M3)
-    # Specific flags for Apple M3
     set(NEKRS_COMPILER_FLAGS "-O2 -g -mcpu=native -ftree-vectorize" CACHE STRING "compiler flags")
     set(OCCA_CXXFLAGS "-w -O3 -g -mcpu=native -ffast-math" CACHE STRING "C++ flags for OCCA JIT compile")
   else()
-    # General flags for other architectures (e.g., x86 or other ARM-based)
     set(NEKRS_COMPILER_FLAGS "-O2 -g -march=native -mtune=native -ftree-vectorize" CACHE STRING "compiler flags")
     set(OCCA_CXXFLAGS "-w -O3 -g -march=native -mtune=native -ffast-math" CACHE STRING "C++ flags for OCCA JIT compile")
   endif()
