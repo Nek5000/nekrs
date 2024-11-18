@@ -86,12 +86,24 @@ string(COMPARE EQUAL "${CMAKE_CXX_COMPILER_ID}" "ARMClang" USING_LLVM)
 string(COMPARE EQUAL "${CMAKE_CXX_COMPILER_ID}" "AppleClang" USING_APPLE_LLVM)
 string(COMPARE EQUAL "${CMAKE_CXX_COMPILER_ID}" "NVHPC" USING_NVHPC)
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
-  # This will match Apple Silicon (M1, M2, M3)
-  set(IS_APPLE_M3 TRUE)
+execute_process(
+    COMMAND sysctl -n machdep.cpu.brand_string
+    OUTPUT_VARIABLE CPU_BRAND_STRING
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+if(CPU_BRAND_STRING MATCHES "Apple M3")
+    set(IS_APPLE_M3 TRUE)
 else()
-  set(IS_APPLE_M3 FALSE)
+    set(IS_APPLE_M3 FALSE)
 endif()
+
+# Example: print out the detected CPU architecture
+message(STATUS "CPU Brand: ${CPU_BRAND_STRING}")
+message(STATUS "Is Apple M3: ${IS_APPLE_M3}")
+message(STATUS "Is Apple M2: ${IS_APPLE_M2}")
+message(STATUS "Is Apple M1: ${IS_APPLE_M1}")
+
 
 if(USING_GNU OR USING_LLVM OR USING_APPLE_LLVM)
   if(IS_APPLE_M3)
