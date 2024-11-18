@@ -89,8 +89,23 @@ endif()
 string(COMPARE EQUAL "${CMAKE_CXX_COMPILER_ID}" "AppleClang" USING_APPLE_LLVM)
 string(COMPARE EQUAL "${CMAKE_CXX_COMPILER_ID}" "NVHPC" USING_NVHPC)
 
+execute_process(
+    COMMAND sysctl -n machdep.cpu.brand_string
+    OUTPUT_VARIABLE CPU_BRAND_STRING
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+if(CPU_BRAND_STRING MATCHES "Apple M3")
+  set(IS_APPLE_M3 TRUE)
+else()
+  set(IS_APPLE_M3 FALSE)
+endif()
+
 if(USING_GNU OR USING_LLVM OR USING_APPLE_LLVM)
   set(NEKRS_COMPILER_DEFAULT_FLAGS "-O2 -g -march=native -mtune=native -ftree-vectorize")
+  if(IS_APPLE_M3)
+    set(NEKRS_COMPILER_DEFAULT_FLAGS "-O2 -g -mcpu=native -ftree-vectorize")
+  endif()
   if (USING_GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.1)
     message(FATAL_ERROR "GNU compiler version must be at least 9.1!")
   endif()
@@ -113,6 +128,10 @@ if(USING_INTEL_LLVM)
   set(OCCA_CXXFLAGS "-w -O3 -g" CACHE STRING "C++ flags for OCCA JIT compile")
 elseif(USING_GNU OR USING_LLVM OR USING_APPLE_LLVM)
   set(OCCA_CXXFLAGS "-w -O3 -g -march=native -mtune=native -ffast-math" CACHE STRING "C++ flags for OCCA JIT compile")
+  if(IS_APPLE_M3)
+    set(OCCA_CXXFLAGS "-w -O3 -g -mcpu=native -ffast-math" CACHE STRING "C++ flags for OCCA JIT compile")
+  endif()
+  
 elseif(USING_NVHPC)
   set(OCCA_CXXFLAGS "-w -O3 -g -fast" CACHE STRING "C++ flags for OCCA JIT compile")
 else()
